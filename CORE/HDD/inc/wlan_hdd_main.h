@@ -800,6 +800,10 @@ typedef struct hdd_scaninfo_s
 
    hdd_scan_pending_option_e scan_pending_option;
    tANI_U8 sessionId;
+   /* time to store last station scan done. */
+   v_TIME_t     last_scan_timestamp;
+   tANI_U8 last_scan_channelList[WNI_CFG_VALID_CHANNEL_LIST_LEN];
+   tANI_U8 last_scan_numChannels;
 
 }hdd_scaninfo_t;
 
@@ -878,14 +882,10 @@ struct hdd_adapter_s
 
 #ifdef WLAN_NS_OFFLOAD
    /** IPv6 notifier callback for handling NS offload on change in IP */
-   struct notifier_block ipv6_notifier;
-   bool ipv6_notifier_registered;
    struct work_struct  ipv6NotifierWorkQueue;
 #endif
     
    /** IPv4 notifier callback for handling ARP offload on change in IP */
-   struct notifier_block ipv4_notifier;
-   bool ipv4_notifier_registered;
    struct work_struct  ipv4NotifierWorkQueue;
 
    //TODO Move this to sta Ctx
@@ -1291,6 +1291,7 @@ struct hdd_context_s
     tdls_scan_context_t tdls_scan_ctxt;
     /* Lock to avoid race condition during TDLS operations*/
     struct mutex tdls_lock;
+    v_BOOL_t is_tdls_btc_enabled;
 #endif
 
     hdd_traffic_monitor_t traffic_monitor;
@@ -1340,6 +1341,18 @@ struct hdd_context_s
     macAddrSpoof_t spoofMacAddr;
     /* flag to decide if driver need to scan DFS channels or not */
     v_BOOL_t  disable_dfs_flag;
+
+#ifdef WLAN_NS_OFFLOAD
+    /*
+     *  IPv6 notifier callback for handling NS offload on change in IP
+     */
+    struct notifier_block ipv6_notifier;
+#endif
+
+    /* IPv4 notifier callback for handling ARP offload on change in
+     * IP
+     */
+    struct notifier_block ipv4_notifier;
 };
 
 

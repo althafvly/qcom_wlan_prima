@@ -7333,26 +7333,8 @@ int __wlan_hdd_cfg80211_change_iface( struct wiphy *wiphy,
                     pAdapter->device_mode = (type == NL80211_IFTYPE_STATION) ?
                                 WLAN_HDD_INFRA_STATION: WLAN_HDD_P2P_CLIENT;
                 }
-#ifdef FEATURE_WLAN_TDLS
-                /* The open adapter for the p2p shall skip initializations in
-                 * tdls_init if the device mode is WLAN_HDD_P2P_DEVICE, for
-                 * TDLS is supported only on WLAN_HDD_P2P_CLIENT. Hence invoke
-                 * tdls_init when the change_iface sets the device mode to
-                 * WLAN_HDD_P2P_CLIENT.
-                 */
-
-                if ( pAdapter->device_mode == WLAN_HDD_P2P_CLIENT)
-                {
-                    if (0 != wlan_hdd_sta_tdls_init (pAdapter))
-                    {
-                        hddLog(VOS_TRACE_LEVEL_ERROR,
-                            "%s: tdls initialization failed", __func__);
-                        return -EINVAL;
-                    }
-                }
-#endif
-
                 break;
+
             case NL80211_IFTYPE_ADHOC:
                 hddLog(VOS_TRACE_LEVEL_INFO,
                   "%s: setting interface Type to ADHOC", __func__);
@@ -9426,6 +9408,7 @@ static eHalStatus hdd_cfg80211_scan_done_callback(tHalHandle halHandle,
     int ret = 0;
     bool aborted = false;
     long waitRet = 0;
+    tANI_U8 i;
 
     ENTER();
 
@@ -9509,6 +9492,27 @@ static eHalStatus hdd_cfg80211_scan_done_callback(tHalHandle halHandle,
     pAdapter->request = NULL;
     /* Scan is no longer pending */
     pScanInfo->mScanPending = VOS_FALSE;
+
+    /* last_scan_timestamp is used to decide if new scan
+     * is needed or not on station interface. If last station
+     *  scan time and new station scan time is less then
+     * last_scan_timestamp ; driver will return cached scan.
+     */
+    if (req->no_cck == FALSE && status == eCSR_SCAN_SUCCESS) // no_cck will be set during p2p find
+    {
+        pScanInfo->last_scan_timestamp = vos_timer_get_system_time();
+
+        if ( req->n_channels )
+        {
+            for (i = 0; i < req->n_channels ; i++ )
+            {
+                pHddCtx->scan_info.last_scan_channelList[i] = req->channels[i]->hw_value;
+            }
+            /* store no of channel scanned */
+            pHddCtx->scan_info.last_scan_numChannels= req->n_channels;
+        }
+
+    }
 
     /*
      * cfg80211_scan_done informing NL80211 about completion
@@ -9656,6 +9660,7 @@ int __wlan_hdd_cfg80211_scan( struct wiphy *wiphy,
     int status;
     hdd_scaninfo_t *pScanInfo = NULL;
     v_U8_t* pP2pIe = NULL;
+    int ret = 0;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
     struct net_device *dev = NULL;
@@ -9786,6 +9791,7 @@ int __wlan_hdd_cfg80211_scan( struct wiphy *wiphy,
     hddLog(VOS_TRACE_LEVEL_INFO, "scan request for ssid = %d",
            (int)request->n_ssids);
 
+
     /* Even though supplicant doesn't provide any SSIDs, n_ssids is set to 1.
      * Becasue of this, driver is assuming that this is not wildcard scan and so
      * is not aging out the scan results.
@@ -9887,6 +9893,39 @@ int __wlan_hdd_cfg80211_scan( struct wiphy *wiphy,
 
     /* set requestType to full scan */
     scanRequest.requestType = eCSR_SCAN_REQUEST_FULL_SCAN;
+
+    /* if there is back to back scan happening in driver with in
+     * nDeferScanTimeInterval interval driver should defer new scan request
+     * and should provide last cached scan results instead of new channel list.
+     * This rule is not applicable if scan is p2p scan.
+     * This condition will work only in case when last request no of channels
+     * and channels are exactly same as new request.
+     */
+    if (pScanInfo->last_scan_timestamp !=0 &&
+           (FALSE == request->no_cck) && // no_cck is set during p2p find.
+          ((vos_timer_get_system_time() - pScanInfo->last_scan_timestamp ) < pHddCtx->cfg_ini->nDeferScanTimeInterval))
+    {
+        if (pScanInfo->last_scan_numChannels == scanRequest.ChannelInfo.numOfChannels &&
+               vos_mem_compare(pScanInfo->last_scan_channelList,
+                     channelList, pScanInfo->last_scan_numChannels))
+       {
+           hddLog(VOS_TRACE_LEVEL_WARN,
+                " New and old station scan time differ is less then %u",
+            pHddCtx->cfg_ini->nDeferScanTimeInterval);
+
+           ret = wlan_hdd_cfg80211_update_bss((WLAN_HDD_GET_CTX(pAdapter))->wiphy,
+                                        pAdapter);
+
+           hddLog(VOS_TRACE_LEVEL_WARN,
+                "Return old cached scan as all channels"
+                "and no of channles are same");
+           if (0 > ret)
+                hddLog(VOS_TRACE_LEVEL_INFO, "%s: NO SCAN result", __func__);
+
+           cfg80211_scan_done(request, eCSR_SCAN_SUCCESS);
+           return eHAL_STATUS_SUCCESS ;
+       }
+    }
 
     /* Flush the scan results(only p2p beacons) for STA scan and P2P
      * search (Flush on both full  scan and social scan but not on single
@@ -12796,7 +12835,7 @@ static int wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
                                  param->subtype, &delStaParams);
 
 #else
-    WLANSAP_PopulateDelStaParams(mac, eCsrForcedDeauthSta,
+    WLANSAP_PopulateDelStaParams(mac, eSIR_MAC_DEAUTH_LEAVING_BSS_REASON,
                                  (SIR_MAC_MGMT_DEAUTH >> 4), &delStaParams);
 #endif
     ret = __wlan_hdd_cfg80211_del_station(wiphy, dev, &delStaParams);
@@ -13676,6 +13715,7 @@ static int wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *d
     int max_sta_failed = 0;
     int responder;
     long rc;
+    int ret;
 #if !(TDLS_MGMT_VERSION2)
     u32 peer_capability = 0;
 #endif
@@ -13842,7 +13882,8 @@ static int wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *d
         VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
             "%s: " MAC_ADDRESS_STR " action %d couldn't sent, as one is pending. return EBUSY",
             __func__, MAC_ADDR_ARRAY(peer), action_code);
-        return -EBUSY;
+        ret = -EBUSY;
+        goto tx_failed;
     }
 
     pAdapter->mgmtTxCompletionStatus = TDLS_CTX_MAGIC;
@@ -13856,8 +13897,8 @@ static int wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *d
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                 "%s: sme_SendTdlsMgmtFrame failed!", __func__);
         pAdapter->mgmtTxCompletionStatus = FALSE;
-        wlan_hdd_tdls_check_bmps(pAdapter);
-        return -EINVAL;
+        ret = -EINVAL;
+        goto tx_failed;
     }
 
     rc = wait_for_completion_interruptible_timeout(&pAdapter->tdls_mgmt_comp,
@@ -13877,14 +13918,14 @@ static int wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *d
             return -EAGAIN;
         }
 
-        wlan_hdd_tdls_check_bmps(pAdapter);
-        return -EINVAL;
+        ret = -EINVAL;
+        goto tx_failed;
     }
 
     if (max_sta_failed)
     {
-      wlan_hdd_tdls_check_bmps(pAdapter);
-      return max_sta_failed;
+        ret = max_sta_failed;
+        goto tx_failed;
     }
 
     if (SIR_MAC_TDLS_SETUP_RSP == action_code)
@@ -13897,6 +13938,20 @@ static int wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *d
     }
 
     return 0;
+
+tx_failed:
+    /* add_station will be called before sending TDLS_SETUP_REQ and
+     * TDLS_SETUP_RSP and as part of add_station driver will enable
+     * BMPS. NL80211_TDLS_DISABLE_LINK will be called if the tx of
+     * TDLS_SETUP_REQ or TDLS_SETUP_RSP fails. BMPS will be enabled
+     * as part of processing NL80211_TDLS_DISABLE_LINK. So need to
+     * enable BMPS for TDLS_SETUP_REQ and TDLS_SETUP_RSP if tx fails.
+     */
+
+    if ((SIR_MAC_TDLS_SETUP_REQ == action_code) ||
+            (SIR_MAC_TDLS_SETUP_RSP == action_code))
+        wlan_hdd_tdls_check_bmps(pAdapter);
+    return ret;
 }
 
 
@@ -14041,9 +14096,10 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                 VOS_STATUS status;
                 long ret;
                 tCsrTdlsLinkEstablishParams tdlsLinkEstablishParams;
+                WLAN_STADescType         staDesc;
 
                 pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, TRUE);
-
+                memset(&staDesc, 0, sizeof(staDesc));
                 if ( NULL == pTdlsPeer ) {
                     hddLog(VOS_TRACE_LEVEL_ERROR, "%s: " MAC_ADDRESS_STR
                            " (oper %d) not exsting. ignored",
@@ -14094,6 +14150,11 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                     wlan_hdd_tdls_set_peer_link_status(pTdlsPeer,
                                                        eTDLS_LINK_CONNECTED,
                                                        eTDLS_LINK_SUCCESS);
+                    staDesc.ucSTAId = pTdlsPeer->staId;
+                    staDesc.ucQosEnabled = tdlsLinkEstablishParams.qos;
+                    WLANTL_UpdateTdlsSTAClient(pHddCtx->pvosContext,
+                                                    &staDesc);
+
                     /* Mark TDLS client Authenticated .*/
                     status = WLANTL_ChangeSTAState( pHddCtx->pvosContext,
                                                     pTdlsPeer->staId,

@@ -4397,19 +4397,18 @@ static int __iw_setint_getnone(struct net_device *dev,
     hdd_wext_state_t  *pWextState =  WLAN_HDD_GET_WEXT_STATE_PTR(pAdapter);
     int cmd_len = wrqu->data.length;
     int *value = (int *) kmalloc(cmd_len+1, GFP_KERNEL);
-    int sub_cmd;
-    int set_value;
+    hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
+    int sub_cmd = value[0];
+    int set_value = value[1];
     int ret = 0; /* success */
     int enable_pbm, enable_mp;
 #ifdef CONFIG_HAS_EARLYSUSPEND
     v_U8_t nEnableSuspendOld;
 #endif
-    INIT_COMPLETION(pWextState->completion_var);
 
-    if ((WLAN_HDD_GET_CTX(pAdapter))->isLogpInProgress)
+    if (0 != wlan_hdd_validate_context(pHddCtx))
     {
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_FATAL,
-                                  "%s:LOGP in Progress. Ignore!!!", __func__);
+        hddLog(VOS_TRACE_LEVEL_ERROR, FL("HDD context is not valid"));
         return -EBUSY;
     }
     if(value == NULL)
@@ -4424,6 +4423,8 @@ static int __iw_setint_getnone(struct net_device *dev,
      sub_cmd = value[0];
      set_value = value[1];
      kfree(value);
+
+    INIT_COMPLETION(pWextState->completion_var);
 
     switch(sub_cmd)
     {

@@ -115,6 +115,7 @@ typedef struct _smeConfigParams
     tANI_U8  isAmsduSupportInAMPDU;
     tANI_U32       fEnableDebugLog;
     tANI_U32      fDeferIMPSTime;
+    tANI_U8       fBtcEnableIndTimerVal;
 } tSmeConfigParams, *tpSmeConfigParams;
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
@@ -3486,5 +3487,20 @@ tANI_U32 sme_GetChannelBondingMode5G(tHalHandle hHal);
 tANI_U32 sme_GetChannelBondingMode24G(tHalHandle hHal);
 
 void sme_disable_dfs_channel(tHalHandle hHal, bool disable_dfs);
+
+/* ---------------------------------------------------------------------------
+     \fn sme_RegisterBtCoexTDLSCallback
+     \brief  Used to plug in callback function
+            Which notify btcoex on or off.
+            Notification come from FW.
+     \param  hHal
+     \param  pCallbackfn : callback function pointer should be plugged in
+     \- return eHalStatus
+    -------------------------------------------------------------------------*/
+eHalStatus sme_RegisterBtCoexTDLSCallback
+(
+    tHalHandle hHal,
+    void (*pCallbackfn)(void *pAdapter, int)
+);
 
 #endif //#if !defined( __SME_API_H )
