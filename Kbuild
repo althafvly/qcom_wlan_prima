@@ -10,7 +10,14 @@ ifeq ($(KERNEL_BUILD),1)
 	# These are provided in Android-based builds
 	# Need to explicitly define for Kernel-based builds
 	MODNAME := wlan
-	WLAN_ROOT := drivers/staging/prima
+	WLAN_ROOT := drivers/staging/pronto
+	CONFIG_PRIMA_WLAN_LFR := y
+	CONFIG_QCOM_TDLS := y
+	CONFIG_PRIMA_WLAN_OKC := y
+	CONFIG_PRIMA_WLAN_11AC_HIGH_TP := y
+	CONFIG_QCOM_VOWIFI_11R := y
+	CONFIG_WLAN_FEATURE_11W := y
+	CONFIG_ENABLE_LINUX_REG := y
 endif
 
 ifeq ($(KERNEL_BUILD), 0)
@@ -53,13 +60,13 @@ CONFIG_QCOM_ESE_UPLOAD := n
 # Feature flags which are not (currently) configurable via Kconfig
 
 #Whether to build debug version
-BUILD_DEBUG_VERSION := 1
+BUILD_DEBUG_VERSION := 0
 
 #Enable this flag to build driver in diag version
-BUILD_DIAG_VERSION := 1
+BUILD_DIAG_VERSION := 0
 
 #Do we panic on bug?  default is to warn
-PANIC_ON_BUG := 1
+PANIC_ON_BUG := 0
 
 #Re-enable wifi on WDI timeout
 RE_ENABLE_WIFI_ON_WDI_TIMEOUT := 0
@@ -555,7 +562,10 @@ CDEFINES :=	-DANI_BUS_TYPE_PLATFORM=1 \
                 -DWLAN_DXE_LOW_RESOURCE_TIMER \
                 -DWLAN_LOGGING_SOCK_SVC_ENABLE \
                 -DWLAN_FEATURE_LINK_LAYER_STATS \
-                -DWLAN_FEATURE_EXTSCAN
+                -DWLAN_FEATURE_EXTSCAN \
+		-DLIM_TRACE_RECORD \
+		-DSME_TRACE_RECORD \
+		-DTRACE_RECORD
 
 ifneq ($(CONFIG_PRONTO_WLAN),)
 CDEFINES += -DWCN_PRONTO
@@ -564,9 +574,6 @@ endif
 
 ifeq ($(BUILD_DEBUG_VERSION),1)
 CDEFINES +=	-DWLAN_DEBUG \
-		-DTRACE_RECORD \
-		-DLIM_TRACE_RECORD \
-		-DSME_TRACE_RECORD \
 		-DPE_DEBUG_LOGW \
 		-DPE_DEBUG_LOGE \
 		-DDEBUG
