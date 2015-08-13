@@ -109,8 +109,8 @@ PATCHLEVEL=$(shell grep -w "PATCHLEVEL =" $(TOP)/kernel/Makefile | sed 's/^PATCH
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(WLAN_CHIPSET)_wlan.ko
 LOCAL_MODULE_KBUILD_NAME  := wlan.ko
-LOCAL_MODULE_TAGS         := debug
-LOCAL_MODULE_DEBUG_ENABLE := true
+LOCAL_MODULE_TAGS         := false
+LOCAL_MODULE_DEBUG_ENABLE := optional
 ifeq ($(PRODUCT_VENDOR_MOVE_ENABLED), true)
 LOCAL_MODULE_PATH         := $(TARGET_OUT_VENDOR)/lib/modules/$(WLAN_CHIPSET)
 else
