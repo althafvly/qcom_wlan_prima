@@ -3044,6 +3044,7 @@ static int __iw_softap_setwpsie(struct net_device *dev,
    u_int8_t WPSIeType;
    u_int16_t length;   
    struct iw_point s_priv_data;
+   int ret = 0;
    ENTER();
 
    /* helper function to get iwreq_data with compat handling. */

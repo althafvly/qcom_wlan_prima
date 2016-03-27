@@ -1973,6 +1973,7 @@ static int __iw_set_genie(struct net_device *dev,
     u_int8_t *genie = NULL;
     u_int8_t *base_genie = NULL;
     v_U16_t remLen;
+    int ret = 0;
 
    ENTER();
 
